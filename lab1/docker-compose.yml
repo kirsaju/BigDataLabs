@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: lab1_postgres
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: lab
+      POSTGRES_DB: petstore
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data:/data
+      - ./sql/01_create_raw.sql:/docker-entrypoint-initdb.d/01_create_raw.sql
+      - ./sql/02_load_raw.sql:/docker-entrypoint-initdb.d/02_load_raw.sql
+      - ./sql/03_create_snowflake.sql:/docker-entrypoint-initdb.d/03_create_snowflake.sql
+      - ./sql/04_populate_snowflake.sql:/docker-entrypoint-initdb.d/04_populate_snowflake.sql
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
