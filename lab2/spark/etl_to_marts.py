@@ -2,7 +2,6 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, sum as _sum, count as _count, avg as _avg, concat_ws
 )
-import clickhouse_connect
 
 spark = SparkSession.builder \
     .appName("ETL: Star Schema -> ClickHouse Marts") \
@@ -18,36 +17,12 @@ PG_PROPS = {
     "driver": "org.postgresql.Driver"
 }
 
-# ClickHouse native client
-ch_client = clickhouse_connect.get_client(host="clickhouse", port=8123, username="click", password="click")
-
-
-def write_to_clickhouse(df, table_name):
-    """Convert Spark DataFrame to pandas and write to ClickHouse via native client."""
-    pdf = df.toPandas()
-
-    # Drop table if exists and create with MergeTree engine
-    ch_client.command(f"DROP TABLE IF EXISTS {table_name}")
-
-    # Build CREATE TABLE statement from pandas dtypes
-    col_defs = []
-    for c in pdf.columns:
-        dtype = str(pdf[c].dtype)
-        if "int" in dtype:
-            ch_type = "Nullable(Int64)"
-        elif "float" in dtype:
-            ch_type = "Nullable(Float64)"
-        else:
-            ch_type = "Nullable(String)"
-        col_defs.append(f"`{c}` {ch_type}")
-
-    ddl = f"CREATE TABLE {table_name} ({', '.join(col_defs)}) ENGINE = MergeTree() ORDER BY tuple()"
-    ch_client.command(ddl)
-
-    # Insert data
-    ch_client.insert_df(table_name, pdf)
-    print(f"  {table_name}: {len(pdf)} rows written to ClickHouse.")
-
+CH_URL = "jdbc:clickhouse://clickhouse:8123/default"
+CH_PROPS = {
+    "user": "click",
+    "password": "click",
+    "driver": "cc.blynk.clickhouse.ClickHouseDriver"
+}
 
 # -------------------------------------------------------------------
 # 1. Read star schema tables from PostgreSQL
@@ -138,16 +113,27 @@ mart_product_quality = fact_product.groupBy("product_name", "product_category").
 print(f"  rows: {mart_product_quality.count()}")
 
 # -------------------------------------------------------------------
-# 4. Write all marts to ClickHouse
+# 4. Write all marts to ClickHouse via Spark JDBC
 # -------------------------------------------------------------------
 print("Writing marts to ClickHouse...")
 
-write_to_clickhouse(mart_product_sales, "mart_product_sales")
-write_to_clickhouse(mart_customer_sales, "mart_customer_sales")
-write_to_clickhouse(mart_time_sales, "mart_time_sales")
-write_to_clickhouse(mart_store_sales, "mart_store_sales")
-write_to_clickhouse(mart_supplier_sales, "mart_supplier_sales")
-write_to_clickhouse(mart_product_quality, "mart_product_quality")
+mart_product_sales.write.jdbc(CH_URL, "mart_product_sales", mode="overwrite", properties=CH_PROPS)
+print("  mart_product_sales written.")
+
+mart_customer_sales.write.jdbc(CH_URL, "mart_customer_sales", mode="overwrite", properties=CH_PROPS)
+print("  mart_customer_sales written.")
+
+mart_time_sales.write.jdbc(CH_URL, "mart_time_sales", mode="overwrite", properties=CH_PROPS)
+print("  mart_time_sales written.")
+
+mart_store_sales.write.jdbc(CH_URL, "mart_store_sales", mode="overwrite", properties=CH_PROPS)
+print("  mart_store_sales written.")
+
+mart_supplier_sales.write.jdbc(CH_URL, "mart_supplier_sales", mode="overwrite", properties=CH_PROPS)
+print("  mart_supplier_sales written.")
+
+mart_product_quality.write.jdbc(CH_URL, "mart_product_quality", mode="overwrite", properties=CH_PROPS)
+print("  mart_product_quality written.")
 
 print("All 6 marts written to ClickHouse. ETL complete!")
 spark.stop()
